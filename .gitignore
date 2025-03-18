@@ -1,0 +1,6 @@
+bonecos*
+*.pptx
+venv
+bkp
+*.zip
+.DS_Store
