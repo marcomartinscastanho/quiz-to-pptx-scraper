@@ -38,9 +38,6 @@ def extract_page_title(soup: BeautifulSoup):
         return ""
 
     title = title_tag.get_text().strip()
-    parts = title.split(" - ")
-    if len(parts) >= 3:
-        return f"{parts[0]} - {parts[2]}"  # Removing the "Liga (I)+" part
     return title
 
 
@@ -127,7 +124,7 @@ def create_ppt(data, output_file):
     slide_layout = prs.slide_layouts[1]
     home_slide = prs.slides.add_slide(slide_layout)
     title = home_slide.shapes.title
-    title.text = "Packet 1"
+    title.text = output_file
 
     themes = get_sorted_themes(data)
     theme_to_first_question_slide = {}
@@ -135,27 +132,26 @@ def create_ppt(data, output_file):
     # Generate slides for each question
     question_slides = []
     for row in data:
-        # title
         slide = prs.slides.add_slide(slide_layout)
+        # title
         title = slide.shapes.title
         title.text = row["theme"]
         # question
-        body_shape = slide.shapes.placeholders[1]
+        body_shape: Shape = slide.shapes.placeholders[1]
         tf = body_shape.text_frame
+        tf.clear()
         tf.text = row["question"]
 
         if row["theme"] not in theme_to_first_question_slide:
             theme_to_first_question_slide[row["theme"]] = slide
         question_slides.append(slide)
 
-    # Generate slides for each answer
-    for row in data:
-        # title
         slide = prs.slides.add_slide(slide_layout)
+        # title
         title = slide.shapes.title
         title.text = row["theme"]
         # answer
-        body_shape = slide.shapes.placeholders[1]
+        body_shape: Shape = slide.shapes.placeholders[1]
         tf = body_shape.text_frame
         tf.text = row["answer"]
         # footer with xP
@@ -176,7 +172,6 @@ def create_ppt(data, output_file):
         hlinkClick = rPr.add_hlinkClick(rId)
         hlinkClick.set("action", "ppaction://hlinksldjump")
 
-    num_questions = len(data)
     for i, slide in enumerate(prs.slides):
         if i == 0:
             continue
@@ -185,34 +180,14 @@ def create_ppt(data, output_file):
             MSO_AUTO_SHAPE_TYPE.ACTION_BUTTON_HOME, prs.slide_width - left, prs.slide_height - top, width, height
         )
         home_button.click_action.target_slide = home_slide
-        if i <= num_questions:
-            # questions have button to the respective answer slide
-            response_button = slide.shapes.add_shape(
-                MSO_AUTO_SHAPE_TYPE.ACTION_BUTTON_HELP,
-                prs.slide_width - 2 * left,
-                prs.slide_height - top,
-                width,
-                height,
-            )
-            response_button.click_action.target_slide = prs.slides[i + num_questions]
-        else:
-            # answers have button back to the question slide
-            home_button = slide.shapes.add_shape(
-                MSO_AUTO_SHAPE_TYPE.ACTION_BUTTON_BACK_OR_PREVIOUS,
-                prs.slide_width - 2 * left,
-                prs.slide_height - top,
-                width,
-                height,
-            )
-            home_button.click_action.target_slide = prs.slides[i - num_questions]
 
     # Save presentation
-    prs.save(output_file)
+    prs.save(f"{output_file}.pptx")
     print(f"Presentation saved as {output_file}")
 
 
 def main():
-    url = ""  # Change as needed
+    url = "https://quizportugal.pt/sites/default/files/pictures/QNpt13_I9.html"  # Change as needed
     html_content = fetch_page(url)
     if html_content:
         soup = parse_html(html_content)
@@ -220,8 +195,7 @@ def main():
         quiz_data = extract_quiz_data(soup)
         sorted_data = sort_quiz_data(quiz_data)
         for i, part_data in enumerate(sorted_data, 1):
-            f"{page_title} - Part {i}.pptx"
-            ppt_filename = f"{page_title} - Part {i}.pptx"
+            ppt_filename = f"{page_title} - Parte {i}"
             create_ppt(part_data, ppt_filename)
 
 
