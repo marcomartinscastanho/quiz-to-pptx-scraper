@@ -88,6 +88,12 @@ def extract_quiz_data(soup: BeautifulSoup):
             if b_tag:
                 full_name_and_team = b_tag.get_text(strip=True)
                 player_name = full_name_and_team.split(" - ")[0]
+            final_part = parts[-1].strip()
+            final_soup = BeautifulSoup(final_part, "html.parser")
+            points_tag = final_soup.find("b")
+
+            if points_tag:
+                points = points_tag.get_text(strip=True)
             theme_xt_xp = parts[1].strip()
             pattern = re.compile(r"^(.*?)\s*\(xT\s*=\s*([\d.]+),\s*xP\s*=\s*([\d.]+)\)")
             match = pattern.search(theme_xt_xp)
@@ -108,7 +114,15 @@ def extract_quiz_data(soup: BeautifulSoup):
             answer_tag = soup_text.find("b", string="Resposta")
             answer = answer_tag.find_next("i").get_text() if answer_tag else ""
             part_data.append(
-                {"theme": theme, "xT": xt, "xP": xp, "question": question, "answer": answer, "player": player_name}
+                {
+                    "theme": theme,
+                    "xT": xt,
+                    "xP": xp,
+                    "question": question,
+                    "answer": answer,
+                    "player": player_name,
+                    "guessed": points == "2",
+                }
             )
         parsed_data.append(part_data)
     return parsed_data
