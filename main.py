@@ -19,8 +19,8 @@ def fetch_page(url):
     try:
         response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
         response.raise_for_status()  # Raise an error for bad status codes
-        # print("response", response.content)
-        return response.content
+        response.encoding = "utf-8"
+        return response.text
     except requests.exceptions.RequestException as e:
         print(f"Error fetching page: {e}")
         return None
@@ -41,23 +41,34 @@ def extract_page_title(soup: BeautifulSoup):
     return title
 
 
-def extract_quiz_data(soup: BeautifulSoup):
-    """Extracts quiz questions and answers from the JSON inside a <script> tag within a specific div."""
-    div_container = soup.find("div", class_="level3")
-    if not div_container:
-        print("No matching div found.")
-        return []
-    script_tag = div_container.find("script", type="application/json")
-    if not script_tag:
-        print("No JSON script tag found inside the div.")
-        return []
-    try:
-        # print("script_tag", script_tag.string)
-        whole_json = json.loads(script_tag.string)
-        # print("whole_json", whole_json)
+def find_jf_game(soup: BeautifulSoup):
+    for div_container in soup.find_all("div", class_="level3"):
+        script_tag = div_container.find("script", type="application/json")
+        if not script_tag:
+            continue
+        try:
+            whole_json = json.loads(script_tag.string)
+        except json.JSONDecodeError:
+            continue
+        try:
+            title: str = whole_json["x"]["layout"]["title"]["text"]
+        except KeyError:
+            continue
+        if "José Figueiras" in title:
+            return whole_json
+    print("Did not find José Figueiras.")
+    return whole_json
 
+
+def extract_quiz_data(soup: BeautifulSoup):
+    whole_json = find_jf_game(soup)
+    if not whole_json:
+        print("No matching div with target title found.")
+        return []
+
+    try:
         quiz_data = whole_json["x"]["data"]
-    except (json.JSONDecodeError, KeyError) as e:
+    except KeyError as e:
         print(f"Error parsing JSON: {e}")
         return []
 
@@ -68,9 +79,15 @@ def extract_quiz_data(soup: BeautifulSoup):
             continue
         for row in part["text"]:
             soup_text = BeautifulSoup(row, "html.parser")
-            parts = re.split(r"<br\s*/>", soup_text.prettify())
+            parts = re.split(r"<br\s*/>", str(soup_text))
             if len(parts) < 2:
                 continue
+            player_tag = parts[0].strip()
+            player_soup = BeautifulSoup(player_tag, "html.parser")
+            b_tag = player_soup.find("b")
+            if b_tag:
+                full_name_and_team = b_tag.get_text(strip=True)
+                player_name = full_name_and_team.split(" - ")[0]
             theme_xt_xp = parts[1].strip()
             pattern = re.compile(r"^(.*?)\s*\(xT\s*=\s*([\d.]+),\s*xP\s*=\s*([\d.]+)\)")
             match = pattern.search(theme_xt_xp)
@@ -86,11 +103,13 @@ def extract_quiz_data(soup: BeautifulSoup):
                 br.replace_with(" ")
             # Extract question
             question_tag = soup_text.find("i")
-            question = question_tag.get_text().encode("latin-1").decode("utf-8") if question_tag else ""
+            question = question_tag.get_text() if question_tag else ""
             # Extract answer
             answer_tag = soup_text.find("b", string="Resposta")
-            answer = answer_tag.find_next("i").get_text().encode("latin-1").decode("utf-8") if answer_tag else ""
-            part_data.append({"theme": theme, "xT": xt, "xP": xp, "question": question, "answer": answer})
+            answer = answer_tag.find_next("i").get_text() if answer_tag else ""
+            part_data.append(
+                {"theme": theme, "xT": xt, "xP": xp, "question": question, "answer": answer, "player": player_name}
+            )
         parsed_data.append(part_data)
     return parsed_data
 
@@ -186,17 +205,30 @@ def create_ppt(data, output_file):
     print(f"Presentation saved as {output_file}")
 
 
+def print_json(content: dict, filename: str):
+    with open(filename, "w") as json_file:
+        json.dump(content, json_file, indent=2)
+
+
 def main():
-    url = "https://quizportugal.pt/sites/default/files/pictures/QNpt13_I9.html"  # Change as needed
-    html_content = fetch_page(url)
-    if html_content:
-        soup = parse_html(html_content)
-        page_title = extract_page_title(soup)
-        quiz_data = extract_quiz_data(soup)
-        sorted_data = sort_quiz_data(quiz_data)
-        for i, part_data in enumerate(sorted_data, 1):
-            ppt_filename = f"{page_title} - Parte {i}"
-            create_ppt(part_data, ppt_filename)
+    urls = ["https://quizportugal.pt/sites/default/files/pictures/QNpt15_7.html#jam-37-x-38-jfg"]
+    for url in urls:
+        html_content = fetch_page(url)
+        if html_content:
+            soup = parse_html(html_content)
+            page_title = extract_page_title(soup)
+            quiz_data = extract_quiz_data(soup)
+            sorted_data = sort_quiz_data(quiz_data)
+            season, week = [int(n) for n in re.findall(r"\d+", page_title)]
+            quiz = {"season": season, "week": week}
+            parts = []
+            for i, part_data in enumerate(sorted_data, 1):
+                ppt_filename = f"{page_title} - Parte {i}"
+                themes = [theme for theme in get_sorted_themes(part_data) if not theme.startswith("Mystery Box")]
+                parts.append({"sequence": i, "themes": themes, "questions": part_data})
+                create_ppt(part_data, ppt_filename)
+            quiz["parts"] = parts
+            print_json(quiz, f"{page_title}.json")
 
 
 if __name__ == "__main__":
